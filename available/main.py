@@ -21,8 +21,8 @@ def stock_availability(name):
     """
     goods_df = pd.read_excel(name, index_col=0, skiprows=2)
     quantity = goods_df.shape[0]
-    articles = {goods_df.index[i] for i in range(quantity) if goods_df.values[i][1] == 'V'}
-    return articles
+    items = {goods_df.index[i] for i in range(quantity) if goods_df.values[i][1] == 'V'}
+    return items
 
 
 def current_price_list(goods_xls, prise_xls):
