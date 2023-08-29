@@ -59,6 +59,15 @@ def is_number(arg):
             arg = input()
 
 
+def to_continue(arg1, arg2):
+    while True:
+        res = input()
+        if res in arg1 | arg2:
+            return res
+        else:
+            print('Виберіть "yes" або "no" - y/n')
+
+
 def avail(goods_xls, price_df):
     """
     Uses dealer's price list, adds column "Availability"
@@ -148,33 +157,49 @@ def update_sale(glob_price, dealers_price):
 def main():
     config = pd.read_excel('config.xls', index_col=0, skiprows=4)
     config = config.convert_dtypes()
-
-    print('Перетягніть Ваш файл (прайс) у командний рядок. Або введіть його імʼя. З зазначенням\n'
-          'шляху до файла, якщо він не в теці з програмою ')
-    customer_price_name = input().strip(" '")
-    # customer_price_name = config.loc['customer_price']['Значення']
-
-    print('Вводьте, будь ласка, числа та натискайте <Enter>.\n')
-    print('Який номер стовпчика з артикулами у Вашому прайсі?')
-    number = input()
-    items_column = is_number(number) - 1
-
-    print('У якому рядку Вашого прайсу найменування стовпчиків ("Артикул", "Ціна", тощо)?')
-    number = input()
-    first_row = is_number(number) - 1
-    customer_price = pd.read_excel(customer_price_name, index_col=items_column, skiprows=first_row)
-
-    print('Зачекайте, будь ласка: програма працює з файлами.')
     goods = config.loc['goods']['Значення']
     supplier_price_list = config.loc['current_price']['Значення']
 
-    supplier_price_list = global_price_list(supplier_price_list, config)
-    customer_price = update_price(supplier_price_list, customer_price, DATE_LABEL_FOR_COLUMNNAME)
-    customer_price = update_promo(supplier_price_list, customer_price)
-    customer_price = update_sale(supplier_price_list, customer_price)
-    customer_price = avail(goods, customer_price)
+    print('Зачекайте, будь ласка: програма працює з файлами.')
 
-    customer_price.to_excel('_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME)) + '.xlsx')
+    supplier_price_list = global_price_list(supplier_price_list, config)
+
+    while True:
+        print('\nПеретягніть Ваш файл (прайс) у командний рядок. Або введіть його імʼя'
+              '(з зазначенням шляху до файла, якщо він не в теці з програмою).')
+        customer_price_name = input().strip(" '")
+
+        print('\nВводьте, будь ласка, числа та натискайте <Enter>.\n')
+        print('Який номер стовпчика з артикулами у Вашому прайсі?')
+        number = input()
+        items_column = is_number(number) - 1
+
+        print('У якому рядку Вашого прайсу найменування стовпчиків ("Артикул", "Ціна", тощо)?')
+        number = input()
+        first_row = is_number(number) - 1
+        customer_price = pd.read_excel(customer_price_name, index_col=items_column,
+                                       skiprows=first_row)
+
+        print('\nЗачекайте, будь ласка: програма працює з файлами.\n')
+
+        customer_price = update_price(supplier_price_list, customer_price,
+                                      DATE_LABEL_FOR_COLUMNNAME)
+        customer_price = update_promo(supplier_price_list, customer_price)
+        customer_price = update_sale(supplier_price_list, customer_price)
+        customer_price = avail(goods, customer_price)
+
+        filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
+        customer_price.to_excel(filename + '.xlsx')
+        print(f'Оновлений прайс --> {filename}')
+
+        positive = {'y', 'yes', 'так'}
+        negative = {'n', 'no', 'ні'}
+
+        print('\nОбробити ще файл? Y/n:')
+        ans = to_continue(positive, negative)
+        if ans.lower() in negative:
+            print('\nПрограма завершена\n')
+            exit()
 
 
 if __name__ == "__main__":
