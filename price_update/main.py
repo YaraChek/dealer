@@ -137,7 +137,7 @@ def global_price_list(current_price, conf_df):
                 prices = prices.drop(index='nan')
             df_list.append(prices)
         progr_bar.set_description("Опрацьовано аркушів")
-    return pd.concat(df_list)
+    return pd.concat(df_list)  # , verify_integrity=True
 
 
 def prepare_goods(goods_xls):
@@ -146,8 +146,9 @@ def prepare_goods(goods_xls):
     :param goods_xls: goods on supplier's stores (*.xls or *.xlsx)
     :return: items in stock at the supplier's main warehouse (set)
     """
+    print('Робота з файлом залишків:')
     goods_df = pd.read_excel(goods_xls, index_col=0, skiprows=2)
-    items = {str(goods_df.index[i]).strip("'") for i in range(goods_df.shape[0]) if
+    items = {str(goods_df.index[i]).strip("'") for i in tqdm(range(goods_df.shape[0])) if
              str(goods_df.values[i][1]).strip() != 'nan'}
     return items
 
@@ -160,23 +161,13 @@ def prepare_customer_price(cust_price, column, line):
     :param line: row with column names
     :return: dealers price list (pandas DataFrame)
     """
+    print(f'Робота з файлом "{cust_price}":')
     cust_price = pd.read_excel(cust_price, skiprows=line)
     cust_price[cust_price.columns[column]] = \
-        [str(name).strip("' ") for name in cust_price[cust_price.columns[column]]]
+        [str(name).strip("' ") for name in tqdm(cust_price[cust_price.columns[column]])]
+    cust_price.loc[cust_price[cust_price.columns[column]] == 'nan', cust_price.columns[column]] = ''
     cust_price.set_index(cust_price.columns[column], inplace=True)
     return cust_price
-
-
-def avail(items, price_df):
-    """
-    Uses dealer's price list, adds column "Availability"
-    :param items: set of the items from the supplier's central warehouse
-    :param price_df: dealer's price list (DataFrame)
-    :return: pandas DataFrame for the resulting xlsx-file
-    """
-    price_df['Наявність'] = ['+' if str(price_df.index[i]).strip("'") in items else '-'
-                             for i in range(price_df.shape[0])]
-    return price_df
 
 
 def update_price(glob_price, dealers_price, date):
@@ -187,8 +178,9 @@ def update_price(glob_price, dealers_price, date):
     :param date: current date
     :return: updated dealer's price list (DataFrame)
     """
+    print(f'Додавання цін за {date}:')
     glob_items = glob_price.index
-    for item in dealers_price.index:
+    for item in tqdm(dealers_price.index):
         dealers_price.loc[item, ['Ціна ' + date]] = glob_price.loc[item]['Ціна з ПДВ, грн'] \
             if item in glob_items else '-'
     return dealers_price
@@ -201,7 +193,8 @@ def update_promo(glob_price, dealers_price):
     :param dealers_price: dealer's price list (DataFrame)
     :return: updated dealer's price list (DataFrame)
     """
-    for item in dealers_price.index:
+    print('Перевірка акційних пропозицій:')
+    for item in tqdm(dealers_price.index):
         if item in glob_price.index:
             if glob_price.loc[item]['Термін акції до'] != np.nan:
                 dealers_price.loc[item, ['Термін акції до']] = \
@@ -216,11 +209,25 @@ def update_sale(glob_price, dealers_price):
     :param dealers_price: dealer's price list (DataFrame)
     :return: updated dealer's price list (DataFrame)
     """
-    for item in dealers_price.index:
+    print('Перевірка пропозицій розпродажу:')
+    for item in tqdm(dealers_price.index):
         if item in glob_price.index:
             if glob_price.loc[item]['Розпродаж'] != np.nan:
                 dealers_price.loc[item, ['Розпродаж']] = glob_price.loc[item]['Розпродаж']
     return dealers_price
+
+
+def avail(items, price_df):
+    """
+    Uses dealer's price list, adds column "Availability"
+    :param items: set of the items from the supplier's central warehouse
+    :param price_df: dealer's price list (DataFrame)
+    :return: pandas DataFrame for the resulting xlsx-file
+    """
+    print('Перевірка наявності на центральному складі:')
+    price_df['Наявність'] = ['+' if str(price_df.index[i]).strip("'") in items else '-'
+                             for i in tqdm(range(price_df.shape[0]))]
+    return price_df
 
 
 def main():
@@ -230,7 +237,7 @@ def main():
     goods = prepare_goods(goods)
     supplier_price_list = config.loc['current_price']['Значення']
 
-    print('Зачекайте, будь ласка: програма працює з файлом постачальника.')
+    print('Зачекайте, будь ласка: програма працює з прайсом постачальника.')
 
     supplier_price_list = global_price_list(supplier_price_list, config)
 
