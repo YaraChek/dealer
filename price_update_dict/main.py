@@ -77,67 +77,77 @@ def global_price_list(current_price, conf_df):
     Reads the supplier's current price list by sheets, forms a common pandas DataFrame
     :param current_price: current supplier's price list (*.xls or *.xlsx)
     :param conf_df: config file with information about filenames, needed columns & rows (DataFrame)
-    :return: supplier's current price list (DataFrame)
+    :return: supplier's current price list (dict)
     """
+    promosheet_1 = conf_df.loc['promosheet_1']['Значення']
+    promosheet_2 = conf_df.loc['promosheet_2']['Значення']
+    sale_sheet = conf_df.loc['sale_sheet']['Значення']
+    stand_sheet = conf_df.loc['stand_sheet']['Значення']
     table_header = conf_df.loc['table_header']['Індекс']
     standard_price = conf_df.loc['standard_price']['Індекс']
-    quart_price = conf_df.loc['quart_price']['Індекс']
+    promo_price = conf_df.loc['promo_price']['Індекс']
     month_price = conf_df.loc['month_price']['Індекс']
-    quart_promo_date = conf_df.loc['quart_promo_date']['Індекс']
+    promo_date = conf_df.loc['promo_date']['Індекс']
     month_promo_date = conf_df.loc['month_promo_date']['Індекс']
 
-    sheets = pd.ExcelFile(current_price).sheet_names
-    if 'Стенди' in sheets:
-        sheets.remove('Стенди')
-    df_list = []
-    progr_bar = tqdm(sheets)
-    for name in progr_bar:
-        if name == 'Акції':
-            prices = pd.read_excel(current_price, skiprows=table_header,
-                                   sheet_name=name).iloc[:, [0, quart_price, quart_promo_date]]
-            prices[prices.columns[0]] = \
-                [str(name).strip("' ") for name in prices[prices.columns[0]]]
-            prices.columns = ['Артикул', 'Ціна з ПДВ, грн', 'Термін акції до']
-            prices.set_index(prices.columns[0], inplace=True)
-            if 'nan' in prices.index:
-                prices = prices.drop(index='nan')
-            df_list.append(prices)
-        elif name == 'Ціна місяця':
-            prices = pd.read_excel(current_price, skiprows=table_header,
-                                   sheet_name=name).iloc[:, [0, month_price, month_promo_date]]
-            prices.columns = ['Артикул', 'Ціна з ПДВ, грн', 'Термін акції до']
-            prices[prices.columns[0]] = \
-                [str(name).strip("' ") for name in prices[prices.columns[0]]]
-            prices.set_index(prices.columns[0], inplace=True)
-            if 'nan' in prices.index:
-                prices = prices.drop(index='nan')
-            df_list.append(prices)
-        elif name == 'Розпродаж':
-            prices = pd.read_excel(current_price, skiprows=table_header,
-                                   sheet_name=name).iloc[:, [0, standard_price + 1]]
+    global_dict = {}
 
-            prices.columns = ['Артикул', 'Ціна з ПДВ, грн']
-            prices[prices.columns[0]] = \
-                [str(name).strip("' ") for name in prices[prices.columns[0]]]
-            prices.set_index(prices.columns[0], inplace=True)
-            if 'nan' in prices.index:
-                prices = prices.drop(index='nan')
-            prices['Ціна з ПДВ, грн'] = round(prices['Ціна з ПДВ, грн'], 2) * 1.2
-            prices['Розпродаж'] = 'Розпродаж'
-            df_list.append(prices)
-        else:
-            prices = pd.read_excel(current_price, skiprows=table_header,
-                                   sheet_name=name).iloc[:, [0, standard_price]]
-            prices[prices.columns[0]] = \
-                [str(name).strip("' ") for name in prices[prices.columns[0]]]
-            prices.dropna(subset=['Артикул'])
-            prices.columns = ['Артикул', 'Ціна з ПДВ, грн']
-            prices.set_index(prices.columns[0], inplace=True)
-            if 'nan' in prices.index:
-                prices = prices.drop(index='nan')
-            df_list.append(prices)
-        progr_bar.set_description("Опрацьовано аркушів")
-    return pd.concat(df_list)  # , verify_integrity=True
+    sheets = pd.ExcelFile(current_price).sheet_names
+
+    print(f'Опрацювання аркушу "{sale_sheet}"')
+    prices = pd.read_excel(current_price, index_col=0, skiprows=table_header,
+                           sheet_name=sale_sheet)
+    for item in tqdm(prices.index):
+        global_dict[str(item).strip("'")] = [{'price': prices.loc[item][standard_price + 1] * 1.2},
+                                             {'date': ''},
+                                             {'sale': 'Розпродаж'}]
+
+    print(f'Опрацювання аркушу "{promosheet_1}"')
+    prices = pd.read_excel(current_price, index_col=0, skiprows=table_header,
+                           sheet_name=promosheet_1)
+
+    for item in tqdm(prices.index):
+        global_dict[str(item).strip("'")] = [{'price': prices.loc[item][promo_price]},
+                                             {'date': str(prices.loc[item][promo_date])[:-9:]},
+                                             {'sale': ''}]
+
+
+
+        # elif name == 'Ціна місяця':
+        #     prices = pd.read_excel(current_price, index_col=0, skiprows=table_header,
+        #                            sheet_name=name).iloc[:, [0, month_price, month_promo_date]]
+        #     prices.columns = ['Артикул', 'Ціна з ПДВ, грн', 'Термін акції до']
+        #     prices[prices.columns[0]] = \
+        #         [str(name).strip("' ") for name in prices[prices.columns[0]]]
+        #     prices.set_index(prices.columns[0], inplace=True)
+        #     if 'nan' in prices.index:
+        #         prices = prices.drop(index='nan')
+        #     df_list.append(prices)
+        # elif name == 'Розпродаж':
+        #     prices = pd.read_excel(current_price, skiprows=table_header,
+        #                            sheet_name=name).iloc[:, [0, standard_price + 1]]
+        #
+        #     prices.columns = ['Артикул', 'Ціна з ПДВ, грн']
+        #     prices[prices.columns[0]] = \
+        #         [str(name).strip("' ") for name in prices[prices.columns[0]]]
+        #     prices.set_index(prices.columns[0], inplace=True)
+        #     if 'nan' in prices.index:
+        #         prices = prices.drop(index='nan')
+        #     prices['Ціна з ПДВ, грн'] = round(prices['Ціна з ПДВ, грн'], 2) * 1.2
+        #     prices['Розпродаж'] = 'Розпродаж'
+        #     df_list.append(prices)
+        # else:
+        #     prices = pd.read_excel(current_price, skiprows=table_header,
+        #                            sheet_name=name).iloc[:, [0, standard_price]]
+        #     prices[prices.columns[0]] = \
+        #         [str(name).strip("' ") for name in prices[prices.columns[0]]]
+        #     prices.dropna(subset=['Артикул'])
+        #     prices.columns = ['Артикул', 'Ціна з ПДВ, грн']
+        #     prices.set_index(prices.columns[0], inplace=True)
+        #     if 'nan' in prices.index:
+        #         prices = prices.drop(index='nan')
+        #     df_list.append(prices)
+    return global_dict
 
 
 def prepare_goods(goods_xls):

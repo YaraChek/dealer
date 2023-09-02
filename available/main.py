@@ -9,8 +9,8 @@ import datetime
 
 
 DATE_LABEL = datetime.datetime.now().strftime("%Y-%m-%d")
-GOODS_FILE = 'Goods_2023-08-12.xls'
-WORKING_FILE = 'working_file.xls'
+GOODS_FILE = 'Goods_2023-08-28.xls'
+WORKING_FILE = 'Кутові_шліфмашини_125_мм.xls'
 OUTPUT_FILE = '_'.join((WORKING_FILE[:-4], DATE_LABEL)) + '.xlsx'
 
 
@@ -32,7 +32,7 @@ def current_price_list(goods_xls, prise_xls):
     :param prise_xls: dealer's price list
     :return: pandas DataFrame for the resulting xlsx-file
     """
-    sales_file_df = pd.read_excel(prise_xls, index_col=0, skiprows=8)
+    sales_file_df = pd.read_excel(prise_xls, index_col=0, skiprows=0)
     num_rows_sales = sales_file_df.shape[0]
     goods = stock_availability(goods_xls)
     sales_file_df['Наявність'] = \
