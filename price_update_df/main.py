@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
 """
 The program receives 3+ files as input:
@@ -66,7 +66,7 @@ def to_continue(arg1, arg2):
     """Clarifies the response from the user if necessary"""
     while True:
         res = input()
-        if res in arg1 | arg2:
+        if res.lower() in arg1 | arg2:
             return res
         else:
             print('Виберіть "yes" або "no" - y/n')
@@ -79,6 +79,9 @@ def global_price_list(current_price, conf_df):
     :param conf_df: config file with information about filenames, needed columns & rows (DataFrame)
     :return: supplier's current price list (DataFrame)
     """
+    promosheet_1 = conf_df.loc['promosheet_1']['Значення']
+    promosheet_2 = conf_df.loc['promosheet_2']['Значення']
+    sale_sheet = conf_df.loc['sale_sheet']['Значення']
     table_header = conf_df.loc['table_header']['Індекс']
     standard_price = conf_df.loc['standard_price']['Індекс']
     promo_price = conf_df.loc['promo_price']['Індекс']
@@ -92,7 +95,7 @@ def global_price_list(current_price, conf_df):
     df_list = []
     progr_bar = tqdm(sheets)
     for name in progr_bar:
-        if name == 'Акції':
+        if name == promosheet_1:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, promo_price, promo_date]]
             prices[prices.columns[0]] = \
@@ -102,7 +105,7 @@ def global_price_list(current_price, conf_df):
             if 'nan' in prices.index:
                 prices = prices.drop(index='nan')
             df_list.append(prices)
-        elif name == 'Ціна місяця':
+        elif name == promosheet_2:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, month_price, month_promo_date]]
             prices.columns = ['Артикул', 'Ціна з ПДВ, грн', 'Термін акції до']
@@ -112,7 +115,7 @@ def global_price_list(current_price, conf_df):
             if 'nan' in prices.index:
                 prices = prices.drop(index='nan')
             df_list.append(prices)
-        elif name == 'Розпродаж':
+        elif name == sale_sheet:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, standard_price + 1]]
 
@@ -229,16 +232,22 @@ def update_sale(glob_price, dealers_price, ignore_items):
     return dealers_price
 
 
-def avail(items, price_df):
+def avail(items, price_df, date):
     """
     Uses dealer's price list, adds column "Availability"
     :param items: set of the items from the supplier's central warehouse
     :param price_df: dealer's price list (DataFrame)
+    :param date: current date
     :return: pandas DataFrame for the resulting xlsx-file
     """
     print('Перевірка наявності на центральному складі:')
-    price_df['Наявність'] = ['+' if str(price_df.index[i]).strip("'") in items else '-'
+    price_df['Наявність'] = ['+' if price_df.index[i] in items else '-'
                              for i in tqdm(range(price_df.shape[0]))]
+    price_df.loc[(price_df['Наявність'] == '+') & (price_df['Ціна ' + date] == '-'),
+                 'Ціна ' + date] = \
+        ('Невірно оброблено артикул. Можливо постачальник не надає вам ціну на нього, '
+         'а можливо перші "0" губляться')
+
     return price_df
 
 
@@ -274,7 +283,7 @@ def main():
             update_price(supplier_price_list, customer_price, DATE_LABEL_FOR_COLUMNNAME)
         customer_price = update_promo(supplier_price_list, customer_price, duplicate_items)
         customer_price = update_sale(supplier_price_list, customer_price, duplicate_items)
-        customer_price = avail(goods, customer_price)
+        customer_price = avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME)
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
         customer_price.to_excel(filename + '.xlsx')

@@ -210,7 +210,7 @@ def avail(items, price_df):
     :return: pandas DataFrame for the resulting xlsx-file
     """
     print('Перевірка наявності на центральному складі:')
-    price_df['Наявність'] = ['+' if str(price_df.index[i]).strip("'") in items else '-'
+    price_df['Наявність'] = ['+' if price_df.index[i] in items else '-'
                              for i in tqdm(range(price_df.shape[0]))]
     return price_df
 
