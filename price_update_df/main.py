@@ -19,6 +19,21 @@ from tqdm import tqdm
 DATE_LABEL_FOR_FILENAME = datetime.datetime.now().strftime("%Y-%m-%d")
 DATE_LABEL_FOR_COLUMNNAME = datetime.datetime.now().strftime("%d.%m.%Y")
 
+ign = {'100069790', '609024651', '20245041', '851209881', '851209880',
+       '21805000', '140059390', '140059380', '43105603', '140059330',
+       '119049970', '119059550', '119059900', '119059490', '119059730',
+       '119059890', '119059980', '119059570', '119059640', '119059940',
+       '140059360', '630139820', '610129940', '31426000', '31424000',
+       '31512000', '565119990', '7202120', '7105417', '1311457', '7201573',
+       '323049950', '609640621', '7201551', '7105944', '7202099', '7201885',
+       '1311217', '28184020', '7106249', '7201958', '810075-9', '3641800',
+       '303031998', '7202102', '851339960', '851109960', '851029930',
+       '851199960', '609024652', '654009931', '21151230', '440129940',
+       '440209890', '851069920', '7205003', '650109950', '650149661',
+       '7201883', '36112152', '596249-3', '593523-0', '736309870', '38117041',
+       '561059990', '200089911', '600129790', '600109910', '600069990',
+       '27150830'}
+
 
 def greetings():
     print('''
@@ -140,7 +155,12 @@ def global_price_list(current_price, conf_df):
                 prices = prices.drop(index='nan')
             df_list.append(prices)
         progr_bar.set_description("Опрацьовано аркушів")
-    return pd.concat(df_list)  # , verify_integrity=True
+    df = pd.concat(df_list)
+    list1 = df.index
+    list2 = df.index.duplicated()
+    dupl_indexes = {list1[i] for i in range(len(list1)) if list2[i]}
+
+    return df, dupl_indexes
 
 
 def prepare_goods(goods_xls):
@@ -173,7 +193,7 @@ def prepare_customer_price(cust_price, column, line):
     return cust_price
 
 
-def update_price(glob_price, dealers_price, date):
+def update_price(glob_price, dealers_price, date, ignore_items):
     """
     Adds the current price column to the dealer's price list
     :param glob_price: current supplier's price list (DataFrame)
@@ -183,18 +203,15 @@ def update_price(glob_price, dealers_price, date):
     """
     print(f'Додавання цін за {date}:')
     glob_items = glob_price.index
-    ignore_items = set()
     for item in tqdm(dealers_price.index):
         if item not in ignore_items:
-            try:
-                dealers_price.loc[item, ['Ціна ' + date]] = \
+            dealers_price.loc[item, ['Ціна ' + date]] = \
                     glob_price.loc[item]['Ціна з ПДВ, грн'] if item in glob_items else '-'
-            except ValueError:
-                print(f'В прайсі постачальника артикул {item} проблемний, його не опрацьовано.')
-                dealers_price.loc[item, ['Ціна ' + date]] = \
-                    'В прайсі постачальника зустрічається в кількох місцях'
-                ignore_items.add(item)
-    return dealers_price, ignore_items
+        else:
+            print(f'В прайсі постачальника артикул {item} проблемний, його не опрацьовано.')
+            dealers_price.loc[item, ['Ціна ' + date]] = \
+                'В прайсі постачальника зустрічається в кількох місцях'
+    return dealers_price
 
 
 def update_promo(glob_price, dealers_price, ignore_items):
@@ -260,7 +277,7 @@ def main():
 
     print('Зачекайте, будь ласка: програма працює з прайсом постачальника.')
 
-    supplier_price_list = global_price_list(supplier_price_list, config)
+    supplier_price_list, duplicated_items = global_price_list(supplier_price_list, config)
 
     while True:
         print('\nПеретягніть Ваш файл (прайс) у командний рядок. Або введіть його імʼя'
@@ -279,10 +296,10 @@ def main():
         print('\nЗачекайте, будь ласка: програма працює з файлами.\n')
 
         customer_price = prepare_customer_price(customer_price_name, items_column, first_row)
-        customer_price, duplicate_items = \
-            update_price(supplier_price_list, customer_price, DATE_LABEL_FOR_COLUMNNAME)
-        customer_price = update_promo(supplier_price_list, customer_price, duplicate_items)
-        customer_price = update_sale(supplier_price_list, customer_price, duplicate_items)
+        customer_price = update_price(supplier_price_list, customer_price,
+                                      DATE_LABEL_FOR_COLUMNNAME, duplicated_items)
+        customer_price = update_promo(supplier_price_list, customer_price, duplicated_items)
+        customer_price = update_sale(supplier_price_list, customer_price, duplicated_items)
         customer_price = avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME)
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
