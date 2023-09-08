@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
 """
 The program receives 3+ files as input:
@@ -46,7 +46,7 @@ OpenDocument Spreadsheets.
 Якщо "config.xls" потребує змін, введіть "n" (це - "NO"), правильно заповніть "config.xls",
 обов'язково збережіть, запустіть програму знов.
 
-Бекап файлу "config.xls" має ім'я "config.xls.bak". Якщо в "config.xls" щось раптом "зламається" -
+Бекап файлу "config.xls" має ім'я "config.xls.back". Якщо в "config.xls" щось раптом "зламається" -
 знаєте як повернутися до робочої версії.
 ''')
 
@@ -66,7 +66,7 @@ def to_continue(arg1, arg2):
     """Clarifies the response from the user if necessary"""
     while True:
         res = input()
-        if res in arg1 | arg2:
+        if res.lower() in arg1 | arg2:
             return res
         else:
             print('Виберіть "yes" або "no" - y/n')
@@ -79,6 +79,10 @@ def global_price_list(current_price, conf_df):
     :param conf_df: config file with information about filenames, needed columns & rows (DataFrame)
     :return: supplier's current price list (DataFrame)
     """
+    promosheet_1 = conf_df.loc['promosheet_1']['Значення']
+    promosheet_2 = conf_df.loc['promosheet_2']['Значення']
+    sale_sheet = conf_df.loc['sale_sheet']['Значення']
+    stand_sheet = conf_df.loc['stand_sheet']['Значення']
     table_header = conf_df.loc['table_header']['Індекс']
     standard_price = conf_df.loc['standard_price']['Індекс']
     promo_price = conf_df.loc['promo_price']['Індекс']
@@ -87,12 +91,12 @@ def global_price_list(current_price, conf_df):
     month_promo_date = conf_df.loc['month_promo_date']['Індекс']
 
     sheets = pd.ExcelFile(current_price).sheet_names
-    if 'Стенди' in sheets:
-        sheets.remove('Стенди')
+    if stand_sheet in sheets:
+        sheets.remove(stand_sheet)
     df_list = []
     progr_bar = tqdm(sheets)
     for name in progr_bar:
-        if name == 'Акції':
+        if name == promosheet_1:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, promo_price, promo_date]]
             prices[prices.columns[0]] = \
@@ -102,7 +106,7 @@ def global_price_list(current_price, conf_df):
             if 'nan' in prices.index:
                 prices = prices.drop(index='nan')
             df_list.append(prices)
-        elif name == 'Ціна місяця':
+        elif name == promosheet_2:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, month_price, month_promo_date]]
             prices.columns = ['Артикул', 'Ціна з ПДВ, грн', 'Термін акції до']
@@ -112,7 +116,7 @@ def global_price_list(current_price, conf_df):
             if 'nan' in prices.index:
                 prices = prices.drop(index='nan')
             df_list.append(prices)
-        elif name == 'Розпродаж':
+        elif name == sale_sheet:
             prices = pd.read_excel(current_price, skiprows=table_header,
                                    sheet_name=name).iloc[:, [0, standard_price + 1]]
 
@@ -137,7 +141,22 @@ def global_price_list(current_price, conf_df):
                 prices = prices.drop(index='nan')
             df_list.append(prices)
         progr_bar.set_description("Опрацьовано аркушів")
-    return pd.concat(df_list)  # , verify_integrity=True
+    df = pd.concat(df_list)
+
+    # prepare the dataframe for deleting rows containing products with an ambiguous price
+    df['Ціна з ПДВ, грн'] = \
+        [0 if (type(df['Ціна з ПДВ, грн'][i]) is str or str(df['Ціна з ПДВ, грн'][i]) == 'nan')
+         else df['Ціна з ПДВ, грн'][i] for i in range(df.shape[0])]
+
+    # deleting rows containing products with an ambiguous price
+    df = df.loc[df['Ціна з ПДВ, грн'] != 0]
+
+    # next 3 lines: looking for duplicate indexes, creating set
+    list1 = df.index
+    list2 = df.index.duplicated()
+    dupl_indexes = {list1[i] for i in range(len(list1)) if list2[i]}
+
+    return df, dupl_indexes
 
 
 def prepare_goods(goods_xls):
@@ -170,48 +189,79 @@ def prepare_customer_price(cust_price, column, line):
     return cust_price
 
 
-def update_price(glob_price, dealers_price, date):
+def update_price(glob_price, dealers_price, date, ignore_items):
     """
-    1. Adds the current price column to the dealer's price list
-    2. Checks if there are promotional goods in the dealer's price list
-    3. Checks if the dealer's price list contains sale items
+    Adds the current price column to the dealer's price list
     :param glob_price: current supplier's price list (DataFrame)
     :param dealers_price: dealer's price list (DataFrame)
     :param date: current date
+    :param ignore_items: duplicated items
     :return: updated dealer's price list (DataFrame)
     """
-    print(f'Додавання цін за {date}, перевірка - позиція акційна, а може з розпродажу?')
-    glob_items = set(glob_price.index)
-    ignore_items = set()
+    print(f'Додавання цін за {date}:')
+    glob_items = glob_price.index
     for item in tqdm(dealers_price.index):
         if item not in ignore_items:
-            try:
-                dealers_price.loc[item, ['Ціна ' + date]] = \
+            dealers_price.loc[item, ['Ціна ' + date]] = \
                     glob_price.loc[item]['Ціна з ПДВ, грн'] if item in glob_items else '-'
-                if item in glob_items:
-                    if glob_price.loc[item]['Термін акції до'] != np.nan:
-                        dealers_price.loc[item, ['Термін акції до']] = \
-                            glob_price.loc[item]['Термін акції до']
-                    if glob_price.loc[item]['Розпродаж'] != np.nan:
-                        dealers_price.loc[item, ['Розпродаж']] = glob_price.loc[item]['Розпродаж']
-            except ValueError:
-                print(f'В прайсі постачальника артикул {item} проблемний, його не опрацьовано.')
-                dealers_price.loc[item, ['Ціна ' + date]] = \
-                    'В прайсі постачальника зустрічається в кількох місцях'
-                ignore_items.add(item)
+        else:
+            print(f'В прайсі постачальника артикул {item} проблемний, його не опрацьовано.')
+            dealers_price.loc[item, ['Ціна ' + date]] = \
+                'В прайсі постачальника зустрічається в кількох місцях'
     return dealers_price
 
 
-def avail(items, price_df):
+def update_promo(glob_price, dealers_price, ignore_items):
+    """
+    Checks if there are promotional goods in the dealer's price list
+    :param glob_price: current supplier's price list (DataFrame)
+    :param dealers_price: dealer's price list (DataFrame)
+    :param ignore_items: duplicated SKUs from supplier's file
+    :return: updated dealer's price list (DataFrame)
+    """
+    print('Перевірка акційних пропозицій:')
+    for item in tqdm(dealers_price.index):
+        if item not in ignore_items:
+            if item in glob_price.index:
+                if glob_price.loc[item]['Термін акції до'] != np.nan:
+                    dealers_price.loc[item, ['Термін акції до']] = \
+                        glob_price.loc[item]['Термін акції до']
+    return dealers_price
+
+
+def update_sale(glob_price, dealers_price, ignore_items):
+    """
+    Checks if the dealer's price list contains sale items
+    :param glob_price: current supplier's price list (DataFrame)
+    :param dealers_price: dealer's price list (DataFrame)
+    :param ignore_items: duplicated SKUs from supplier's file
+    :return: updated dealer's price list (DataFrame)
+    """
+    print('Перевірка пропозицій розпродажу:')
+    for item in tqdm(dealers_price.index):
+        if item not in ignore_items:
+            if item in glob_price.index:
+                if glob_price.loc[item]['Розпродаж'] != np.nan:
+                    dealers_price.loc[item, ['Розпродаж']] = glob_price.loc[item]['Розпродаж']
+    return dealers_price
+
+
+def avail(items, price_df, date):
     """
     Uses dealer's price list, adds column "Availability"
     :param items: set of the items from the supplier's central warehouse
     :param price_df: dealer's price list (DataFrame)
+    :param date: current date
     :return: pandas DataFrame for the resulting xlsx-file
     """
     print('Перевірка наявності на центральному складі:')
     price_df['Наявність'] = ['+' if price_df.index[i] in items else '-'
                              for i in tqdm(range(price_df.shape[0]))]
+    price_df.loc[(price_df['Наявність'] == '+') & (price_df['Ціна ' + date] == '-'),
+                 'Ціна ' + date] = \
+        ('Невірно оброблено артикул. Можливо постачальник не надає вам ціну на нього, '
+         'а можливо перші "0" губляться')
+
     return price_df
 
 
@@ -224,7 +274,7 @@ def main():
 
     print('Зачекайте, будь ласка: програма працює з прайсом постачальника.')
 
-    supplier_price_list = global_price_list(supplier_price_list, config)
+    supplier_price_list, duplicated_items = global_price_list(supplier_price_list, config)
 
     while True:
         print('\nПеретягніть Ваш файл (прайс) у командний рядок. Або введіть його імʼя'
@@ -244,8 +294,10 @@ def main():
 
         customer_price = prepare_customer_price(customer_price_name, items_column, first_row)
         customer_price = update_price(supplier_price_list, customer_price,
-                                      DATE_LABEL_FOR_COLUMNNAME)
-        customer_price = avail(goods, customer_price)
+                                      DATE_LABEL_FOR_COLUMNNAME, duplicated_items)
+        customer_price = update_promo(supplier_price_list, customer_price, duplicated_items)
+        customer_price = update_sale(supplier_price_list, customer_price, duplicated_items)
+        customer_price = avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME)
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
         customer_price.to_excel(filename + '.xlsx')

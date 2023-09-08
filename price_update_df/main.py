@@ -19,21 +19,6 @@ from tqdm import tqdm
 DATE_LABEL_FOR_FILENAME = datetime.datetime.now().strftime("%Y-%m-%d")
 DATE_LABEL_FOR_COLUMNNAME = datetime.datetime.now().strftime("%d.%m.%Y")
 
-ign = {'100069790', '609024651', '20245041', '851209881', '851209880',
-       '21805000', '140059390', '140059380', '43105603', '140059330',
-       '119049970', '119059550', '119059900', '119059490', '119059730',
-       '119059890', '119059980', '119059570', '119059640', '119059940',
-       '140059360', '630139820', '610129940', '31426000', '31424000',
-       '31512000', '565119990', '7202120', '7105417', '1311457', '7201573',
-       '323049950', '609640621', '7201551', '7105944', '7202099', '7201885',
-       '1311217', '28184020', '7106249', '7201958', '810075-9', '3641800',
-       '303031998', '7202102', '851339960', '851109960', '851029930',
-       '851199960', '609024652', '654009931', '21151230', '440129940',
-       '440209890', '851069920', '7205003', '650109950', '650149661',
-       '7201883', '36112152', '596249-3', '593523-0', '736309870', '38117041',
-       '561059990', '200089911', '600129790', '600109910', '600069990',
-       '27150830'}
-
 
 def greetings():
     print('''
@@ -61,7 +46,7 @@ OpenDocument Spreadsheets.
 Якщо "config.xls" потребує змін, введіть "n" (це - "NO"), правильно заповніть "config.xls",
 обов'язково збережіть, запустіть програму знов.
 
-Бекап файлу "config.xls" має ім'я "config.xls.bak". Якщо в "config.xls" щось раптом "зламається" -
+Бекап файлу "config.xls" має ім'я "config.xls.back". Якщо в "config.xls" щось раптом "зламається" -
 знаєте як повернутися до робочої версії.
 ''')
 
@@ -97,6 +82,7 @@ def global_price_list(current_price, conf_df):
     promosheet_1 = conf_df.loc['promosheet_1']['Значення']
     promosheet_2 = conf_df.loc['promosheet_2']['Значення']
     sale_sheet = conf_df.loc['sale_sheet']['Значення']
+    stand_sheet = conf_df.loc['stand_sheet']['Значення']
     table_header = conf_df.loc['table_header']['Індекс']
     standard_price = conf_df.loc['standard_price']['Індекс']
     promo_price = conf_df.loc['promo_price']['Індекс']
@@ -105,8 +91,8 @@ def global_price_list(current_price, conf_df):
     month_promo_date = conf_df.loc['month_promo_date']['Індекс']
 
     sheets = pd.ExcelFile(current_price).sheet_names
-    if 'Стенди' in sheets:
-        sheets.remove('Стенди')
+    if stand_sheet in sheets:
+        sheets.remove(stand_sheet)
     df_list = []
     progr_bar = tqdm(sheets)
     for name in progr_bar:
@@ -156,6 +142,16 @@ def global_price_list(current_price, conf_df):
             df_list.append(prices)
         progr_bar.set_description("Опрацьовано аркушів")
     df = pd.concat(df_list)
+
+    # prepare the dataframe for deleting rows containing products with an ambiguous price
+    df['Ціна з ПДВ, грн'] = \
+        [0 if (type(df['Ціна з ПДВ, грн'][i]) is str or str(df['Ціна з ПДВ, грн'][i]) == 'nan')
+         else df['Ціна з ПДВ, грн'][i] for i in range(df.shape[0])]
+
+    # deleting rows containing products without a price
+    df = df.loc[df['Ціна з ПДВ, грн'] != 0]
+
+    # next 3 lines: looking for duplicate indexes, creating set
     list1 = df.index
     list2 = df.index.duplicated()
     dupl_indexes = {list1[i] for i in range(len(list1)) if list2[i]}
@@ -199,18 +195,15 @@ def update_price(glob_price, dealers_price, date, ignore_items):
     :param glob_price: current supplier's price list (DataFrame)
     :param dealers_price: dealer's price list (DataFrame)
     :param date: current date
+    :param ignore_items: duplicated items
     :return: updated dealer's price list (DataFrame)
     """
     print(f'Додавання цін за {date}:')
-    glob_items = glob_price.index
-    for item in tqdm(dealers_price.index):
-        if item not in ignore_items:
-            dealers_price.loc[item, ['Ціна ' + date]] = \
-                    glob_price.loc[item]['Ціна з ПДВ, грн'] if item in glob_items else '-'
-        else:
-            print(f'В прайсі постачальника артикул {item} проблемний, його не опрацьовано.')
-            dealers_price.loc[item, ['Ціна ' + date]] = \
-                'В прайсі постачальника зустрічається в кількох місцях'
+    glob_items = set(glob_price.index).difference(ignore_items)
+    dealers_price['Ціна ' + date] = \
+        ['В прайсі постачальника зустрічається в кількох місцях' if item in ignore_items else
+         glob_price.loc[item]['Ціна з ПДВ, грн'] if item in glob_items else '-'
+         for item in tqdm(dealers_price.index)]
     return dealers_price
 
 
@@ -222,13 +215,11 @@ def update_promo(glob_price, dealers_price, ignore_items):
     :param ignore_items: duplicated SKUs from supplier's file
     :return: updated dealer's price list (DataFrame)
     """
+    items = set(glob_price.index).difference(ignore_items)
     print('Перевірка акційних пропозицій:')
-    for item in tqdm(dealers_price.index):
-        if item not in ignore_items:
-            if item in glob_price.index:
-                if glob_price.loc[item]['Термін акції до'] != np.nan:
-                    dealers_price.loc[item, ['Термін акції до']] = \
-                        glob_price.loc[item]['Термін акції до']
+    dealers_price['Термін акції до'] = \
+        [glob_price.loc[item]['Термін акції до'] if item in items
+         else '' for item in tqdm(dealers_price.index)]
     return dealers_price
 
 
@@ -240,12 +231,10 @@ def update_sale(glob_price, dealers_price, ignore_items):
     :param ignore_items: duplicated SKUs from supplier's file
     :return: updated dealer's price list (DataFrame)
     """
+    items = set(glob_price.index).difference(ignore_items)
     print('Перевірка пропозицій розпродажу:')
-    for item in tqdm(dealers_price.index):
-        if item not in ignore_items:
-            if item in glob_price.index:
-                if glob_price.loc[item]['Розпродаж'] != np.nan:
-                    dealers_price.loc[item, ['Розпродаж']] = glob_price.loc[item]['Розпродаж']
+    dealers_price['Розпродаж'] = [glob_price.loc[item]['Розпродаж'] if item in items else ''
+                                  for item in tqdm(dealers_price.index)]
     return dealers_price
 
 
@@ -304,11 +293,11 @@ def main():
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
         customer_price.to_excel(filename + '.xlsx')
+
         print(f'\nОновлений прайс --> {filename}')
 
         positive = {'y', 'yes', 'так'}
         negative = {'n', 'no', 'ні'}
-
         print('\nОбробити ще файл? Y/n:', end=' ')
         ans = to_continue(positive, negative)
         if ans.lower() in negative:
