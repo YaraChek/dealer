@@ -12,7 +12,6 @@ The program does:
 """
 
 import pandas as pd
-import numpy as np
 import datetime
 from tqdm import tqdm
 
@@ -95,6 +94,7 @@ def global_price_list(current_price, conf_df):
         sheets.remove(stand_sheet)
     df_list = []
     progr_bar = tqdm(sheets)
+    for_sale = None
     for name in progr_bar:
         if name == promosheet_1:
             prices = pd.read_excel(current_price, skiprows=table_header,
@@ -127,7 +127,7 @@ def global_price_list(current_price, conf_df):
             if 'nan' in prices.index:
                 prices = prices.drop(index='nan')
             prices['Ціна з ПДВ, грн'] = round(prices['Ціна з ПДВ, грн'] * 1.2, 2)
-            prices['Розпродаж'] = 'Розпродаж'
+            for_sale = set(prices.index)
             df_list.append(prices)
         else:
             prices = pd.read_excel(current_price, skiprows=table_header,
@@ -156,7 +156,7 @@ def global_price_list(current_price, conf_df):
     list2 = df.index.duplicated()
     dupl_indexes = {list1[i] for i in range(len(list1)) if list2[i]}
 
-    return df, dupl_indexes
+    return df, dupl_indexes, for_sale
 
 
 def prepare_goods(goods_xls):
@@ -223,18 +223,16 @@ def update_promo(glob_price, dealers_price, ignore_items):
     return dealers_price
 
 
-def update_sale(glob_price, dealers_price, ignore_items):
+def update_sale(dealers_price, items):
     """
     Checks if the dealer's price list contains sale items
-    :param glob_price: current supplier's price list (DataFrame)
     :param dealers_price: dealer's price list (DataFrame)
-    :param ignore_items: duplicated SKUs from supplier's file
+    :param items: SKUs in the sale offer
     :return: updated dealer's price list (DataFrame)
     """
-    items = set(glob_price.index).difference(ignore_items)
     print('Перевірка пропозицій розпродажу:')
-    dealers_price['Розпродаж'] = [glob_price.loc[item]['Розпродаж'] if item in items else ''
-                                  for item in tqdm(dealers_price.index)]
+    dealers_price['Розпродаж'] = \
+        ['Розпродаж' if item in items else '' for item in tqdm(dealers_price.index)]
     return dealers_price
 
 
@@ -266,7 +264,8 @@ def main():
 
     print('Зачекайте, будь ласка: програма працює з прайсом постачальника.')
 
-    supplier_price_list, duplicated_items = global_price_list(supplier_price_list, config)
+    supplier_price_list, duplicated_items, sales_item = \
+        global_price_list(supplier_price_list, config)
 
     while True:
         print('\nПеретягніть Ваш файл (прайс) у командний рядок. Або введіть його імʼя'
@@ -288,7 +287,7 @@ def main():
         customer_price = update_price(supplier_price_list, customer_price,
                                       DATE_LABEL_FOR_COLUMNNAME, duplicated_items)
         customer_price = update_promo(supplier_price_list, customer_price, duplicated_items)
-        customer_price = update_sale(supplier_price_list, customer_price, duplicated_items)
+        customer_price = update_sale(customer_price, sales_item)
         customer_price = avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME)
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))

@@ -6,3 +6,7 @@ _The program receives 3+ files as input_:
 _The program does_:
 1. indicates which product from the user price list is in the supplier's main warehouse;
 2. updates prices, marks goods as "Sale", "Promo" etc., saves a copy of updated user's price list.
+
+
+File "main_1.py" - first working version of the program.
+In "main.py": editing two functions and using generators instead of external loops increased program speed by 8.5 times.
