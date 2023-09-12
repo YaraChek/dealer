@@ -9,8 +9,8 @@ import datetime
 
 
 DATE_LABEL = datetime.datetime.now().strftime("%Y-%m-%d")
-GOODS_FILE = '/mnt/forwork/work/Price закупівля/Makita/Goods_2023-09-04.xls'
-WORKING_FILE = 'excel.xlsx'
+GOODS_FILE = '/mnt/forwork/work/Price закупівля/Makita/Goods_2023-09-12.xls'
+WORKING_FILE = 'Makita_price.xls'
 OUTPUT_FILE = '_'.join((WORKING_FILE[:-4], DATE_LABEL)) + '.xlsx'
 
 
