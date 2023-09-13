@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
 """
 The program receives 3+ files as input:
@@ -98,7 +98,10 @@ def dictionary_creation(params):
     cur_dict = {str(df.iloc[i][df.columns[0]]): {'price': round(df.iloc[i][cur_price] * 1.2, 2)
     if sale else df.iloc[i][cur_price], 'date': df.iloc[i][date] if date else None}
                 for i in pbar}
-    return cur_dict
+    res_dict = {df.iloc[i][df.columns[0]]: {'price': round(df.iloc[i][cur_price] * 1.2, 2)
+    if sale else df.iloc[i][cur_price], 'date': df.iloc[i][date] if date else None}
+                for i in pbar if type(df.iloc[i][df.columns[0]]) is int}
+    return cur_dict, res_dict
 
 
 def global_price_list(current_price, conf_df):
@@ -120,6 +123,7 @@ def global_price_list(current_price, conf_df):
     month_promo_date = conf_df.loc['month_promo_date']['Індекс']
 
     global_dict = {}
+    reserve_dict = {}
 
     sheets = pd.ExcelFile(current_price).sheet_names
     for _ in {promosheet_1, promosheet_2, sale_sheet, stand_sheet}:
@@ -131,28 +135,36 @@ def global_price_list(current_price, conf_df):
         prices = read_suppliers_price(args)
 
         args = (prices, standard_price, None, None)
-        global_dict.update(dictionary_creation(args))
+        full_price_list, numeric_price_list = dictionary_creation(args)
+        global_dict.update(full_price_list)
+        reserve_dict.update(numeric_price_list)
 
     # Sale
     args = (current_price, sale_sheet, standard_price + 1, table_header)
     prices = read_suppliers_price(args)
     for_sale = set(prices.index)
     args = (prices, promo_price + 1, None, True)
-    global_dict.update(dictionary_creation(args))
+    full_price_list, numeric_price_list = dictionary_creation(args)
+    global_dict.update(full_price_list)
+    reserve_dict.update(numeric_price_list)
 
     # Promo 1
     args = (current_price, promosheet_1, promo_price, table_header)
     prices = read_suppliers_price(args)
     args = (prices, promo_price, promo_date, None)
-    global_dict.update(dictionary_creation(args))
+    full_price_list, numeric_price_list = dictionary_creation(args)
+    global_dict.update(full_price_list)
+    reserve_dict.update(numeric_price_list)
 
     # Promo 2
     args = (current_price, promosheet_2, month_price, table_header)
     prices = read_suppliers_price(args)
     args = (prices, month_price, month_promo_date, None)
-    global_dict.update(dictionary_creation(args))
+    full_price_list, numeric_price_list = dictionary_creation(args)
+    global_dict.update(full_price_list)
+    reserve_dict.update(numeric_price_list)
 
-    return global_dict, for_sale
+    return global_dict, reserve_dict, for_sale
 
 
 def prepare_goods(goods_xls):
@@ -227,19 +239,35 @@ def update_sale(dealers_price, items):
     dealers_price['Розпродаж'] = ['Розпродаж' if item in items else '' for item in pbar]
 
 
-def avail(items, price_df, date):
+def avail(items, price_df, date, digital_skus):
     """
-    Uses dealer's price list, adds column "Availability"
+    Uses dealer's price list, adds column "Availability" and corrects the price column in case of
+    incorrect entries of digital SKUs in the supplier's price list
     :param items: set of the items from the supplier's central warehouse
     :param price_df: dealer's price list (DataFrame)
     :param date: current date
+    :param digital_skus: digital SKUs from the supplier's price list (dict)
     :return: pandas DataFrame for the resulting xlsx-file
     """
     print('Перевірка наявності на центральному складі:')
+    pbar = tqdm(range(price_df.shape[0]))
     price_df['Наявність'] = ['+' if price_df.index[i] in items else '-'
-                             for i in tqdm(range(price_df.shape[0]))]
+                             for i in pbar]
     price_df.loc[(price_df['Наявність'] == '+') & (price_df['Ціна ' + date] == '-'),
-    'Ціна ' + date] = 'Постачальник не надає ціну'
+                 'Ціна ' + date] = 'Постачальник не надає ціну'
+
+    if 'Постачальник не надає ціну' in price_df['Ціна ' + date].values:
+        # indexes = [i for i, price in enumerate(price_df['Ціна ' + date])
+        #            if price == 'Постачальник не надає ціну']
+        # print(indexes)
+        # dimension = price_df.shape[0]
+
+        # price_df['Ціна ' + date] = [price for price in price_df['Ціна ' + date]]
+
+        price_df['Ціна ' + date] = [digital_skus[int(price_df.index[i])]['price']
+                                    if price_df.index[i].isdigit()
+                                       and int(price_df.index[i]) in digital_skus
+                                    else price_df['Ціна ' + date][i] for i in pbar]
 
 
 def main():
@@ -251,7 +279,7 @@ def main():
 
     print('Зачекайте, будь ласка: програма працює з прайсом постачальника.')
 
-    supplier_price_list, sale = global_price_list(supplier_price_list, config)
+    supplier_price_list, num_skus, sale = global_price_list(supplier_price_list, config)
     skus = set(supplier_price_list.keys())
 
     while True:
@@ -276,7 +304,7 @@ def main():
                      DATE_LABEL_FOR_COLUMNNAME)
         update_promo(supplier_price_list, customer_price, skus)
         update_sale(customer_price, sale)
-        avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME)
+        avail(goods, customer_price, DATE_LABEL_FOR_COLUMNNAME, num_skus)
 
         filename = '_'.join((customer_price_name[:-4], DATE_LABEL_FOR_FILENAME))
 
