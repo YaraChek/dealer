@@ -142,9 +142,9 @@ def global_price_list(current_price, conf_df):
     # Sale
     args = (current_price, sale_sheet, standard_price + 1, table_header)
     prices = read_suppliers_price(args)
-    for_sale = set(prices.index)
     args = (prices, promo_price + 1, None, True)
     full_price_list, numeric_price_list = dictionary_creation(args)
+    for_sale = set(full_price_list.keys())
     global_dict.update(full_price_list)
     reserve_dict.update(numeric_price_list)
 
@@ -180,14 +180,22 @@ def prepare_goods(goods_xls):
     return items
 
 
-def prepare_customer_price(cust_price, column, line):
+def prepare_customer_price(cust_price):
     """
     Reads dealers price list, forms pandas DataFrame, items are converts to type "str"
     :param cust_price: dealers price list (file MS Excel or OpenDocument Spreadsheets)
-    :param column: column for indexes
-    :param line: row with column names
     :return: dealers price list (pandas DataFrame)
     """
+    print('\nВводьте, будь ласка, числа та натискайте <Enter>.\n')
+    print('Який номер стовпчика з артикулами у Вашому прайсі?')
+    number = input()
+    column = is_number(number) - 1
+
+    print('У якому рядку Вашого прайсу найменування стовпчиків ("Артикул", "Ціна", тощо)?')
+    number = input()
+    line = is_number(number) - 1
+
+    print('\nЗачекайте, будь ласка: програма працює з файлами.\n')
     print(f'Читання з файла "{cust_price}":')
     cust_price = pd.read_excel(cust_price, skiprows=line)
 
@@ -243,7 +251,7 @@ def avail(items, price_df, date, digital_skus):
     """
     Uses dealer's price list, adds column "Availability" and corrects the price column in case of
     incorrect entries of digital SKUs in the supplier's price list
-    :param items: set of the items from the supplier's central warehouse
+    :param items: set of the items from the supplier's central warehouse (set)
     :param price_df: dealer's price list (DataFrame)
     :param date: current date
     :param digital_skus: digital SKUs from the supplier's price list (dict)
@@ -255,15 +263,7 @@ def avail(items, price_df, date, digital_skus):
                              for i in pbar]
     price_df.loc[(price_df['Наявність'] == '+') & (price_df['Ціна ' + date] == '-'),
                  'Ціна ' + date] = 'Постачальник не надає ціну'
-
     if 'Постачальник не надає ціну' in price_df['Ціна ' + date].values:
-        # indexes = [i for i, price in enumerate(price_df['Ціна ' + date])
-        #            if price == 'Постачальник не надає ціну']
-        # print(indexes)
-        # dimension = price_df.shape[0]
-
-        # price_df['Ціна ' + date] = [price for price in price_df['Ціна ' + date]]
-
         price_df['Ціна ' + date] = [digital_skus[int(price_df.index[i])]['price']
                                     if price_df.index[i].isdigit()
                                        and int(price_df.index[i]) in digital_skus
@@ -287,18 +287,7 @@ def main():
               '(з зазначенням шляху до файла, якщо він не в теці з програмою).')
         customer_price_name = input().strip(" '")
 
-        print('\nВводьте, будь ласка, числа та натискайте <Enter>.\n')
-        print('Який номер стовпчика з артикулами у Вашому прайсі?')
-        number = input()
-        items_column = is_number(number) - 1
-
-        print('У якому рядку Вашого прайсу найменування стовпчиків ("Артикул", "Ціна", тощо)?')
-        number = input()
-        first_row = is_number(number) - 1
-
-        print('\nЗачекайте, будь ласка: програма працює з файлами.\n')
-
-        customer_price = prepare_customer_price(customer_price_name, items_column, first_row)
+        customer_price = prepare_customer_price(customer_price_name)
 
         update_price(supplier_price_list, customer_price, skus,
                      DATE_LABEL_FOR_COLUMNNAME)
