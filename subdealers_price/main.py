@@ -109,8 +109,9 @@ def main():
             pbar.set_description('Обробка аркушів')
 
     result_df = result(final_dict, COLUMN_NAMES)
-    name = '_'.join(('Makita_опт', DATE))
-    result_df.to_excel(name + '.xlsx')
+    name = ''.join(('_'.join(('Makita_опт', DATE)), '.xlsx'))
+    print('Результуючий файл --->', name)
+    result_df.to_excel(name)
 
 
 main()
