@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.11
+#!/usr/bin/env python3.12
 
 """
 The program analyzes the supplier's multi-sheet price list (xls-, xlsx- or ods-file).
@@ -35,6 +35,12 @@ def prepare_goods(goods_xls):
 
 
 def result(goods_dict, column_names):
+    """
+    Prepare DataFrame for writing final xlsx-file.
+    :param goods_dict: dictionary, where keys are SKUs, values are goods, marks and prices
+    :param column_names: table column names
+    :return: DataFrame for writing final xlsx-file
+    """
     df = pd.DataFrame(columns=column_names)
     print('Формування вихідного файлу')
     for name in column_names:
@@ -63,7 +69,7 @@ def main():
         df = pd.read_excel(current_price_file, skiprows=table_header, sheet_name=sheet)
         dimension = range(df.shape[0])
         for i in dimension:
-            if sheet in (sheets[0], sheets[1]):  # Акції
+            if sheet.startswith('Акц'):  # Акції
                 entry_price = df.iloc[i][promo_price + 2]
                 promo = df.iloc[i][promo_price]
                 quotient = entry_price / promo
@@ -84,7 +90,7 @@ def main():
                     'Вхідна ціна субдилера': subdealer,
                     'Акція / Розпродаж': 'Акція',
                     'Дата закінчення акції': df.iloc[i][promo_date]})
-            elif sheet == sheets[2]:  # Розпродаж
+            elif sheet.startswith('Розпрод'):  # Розпродаж
                 key = str(df.iloc[i][0])
                 final_dict.setdefault(key, {
                     'Артикул': key,
